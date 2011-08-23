@@ -10,6 +10,7 @@ function load(){
 		receive: function(event, ui){
 			ui.item.css('background-color', '#E2EBFE');
 			var selected = ui.item.attr("id");
+			$('#attach_info_' + selected).hide();
 			var type = 'attached';
 			attach(selected, type);
 
@@ -25,6 +26,7 @@ function load(){
 		receive: function(event, ui){
 			ui.item.css('background-color', '#eeee33');
 			var selected = ui.item.attr("id");
+			$('#attach_info_' + selected).show();
 			var type = 'unattached';
 			attach(selected, type);
 		}
@@ -210,9 +212,11 @@ function volumeStatus(snapshotId){
                         if (data.status == 'attached' || data.status == 'busy'){
                                 bgcolor = '#E2EBFE';
                                 $('#' + snapshotId).css('background-color', bgcolor);
+				$('#attach_info_' + snapshotId).hide();
                         } else if (data.status == 'attaching') {
                                 bgcolor = '#eeee33';
                                 $('#' + snapshotId).css('background-color', bgcolor);
+				$('#attach_info_' + snapshotId).show();
                         } else if (data.status == 'detaching') {
 				bgcolor = '#ff2233';
 				$('#' + snapshotId).css('background-color', bgcolor);

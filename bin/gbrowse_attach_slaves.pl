@@ -116,7 +116,7 @@ foreach my $instance (@instances){
 
 	foreach my $volume (@attached_volumes){
 		# We don't copy over the Root volumes
-		unless($volume->tags->{'Name'} eq 'RootA' || $volume->tags->{'Name'} eq 'RootB'){
+		  unless($volume->tags->{'Name'} eq 'Root' || $volume->tags->{'Name'} eq '/srv/gbrowse'){
 		  # get the device mapping for the volume
 	 	  my @mapping = $volume->attachment->instance->blockDeviceMapping;
              	  my ($map) = grep {$volume eq $_->volumeId} @mapping;

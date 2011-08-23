@@ -1,11 +1,13 @@
 #!/usr/bin/perl
 use strict;
+use warnings;
 
-if(!fork){
-	sleep(1);
-	`sudo /etc/init.d/apache2 restart`;
+my $pid = fork();
+if($pid == 0){
+        sleep(1);
+        `sudo apache2ctl -k graceful`;
 }
-
 open STDOUT, '>/dev/null';
 open STDIN, '>/dev/null';
 open STDERR, '>/dev/null';
+

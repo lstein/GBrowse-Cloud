@@ -290,7 +290,31 @@ sub display_information
 				$html .= 
 			qq{
 			<div class="volume_container" id="$snapshot_id">
-				<span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name</span>
+				<span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name
+                                my $attaching;
+                                # Set the background color based on the status of the volume;
+                                if ($status eq 'attached' || $status eq 'busy'){
+                                        $bgcolor = '#E2EBFE';
+                                        $attaching = 'none';
+                                } elsif ($status eq 'attaching'){
+                                        $bgcolor = '#eeee33';
+                                        $attaching = 'visible';
+                                } elsif ($status eq 'detaching'){
+                                        $bgcolor = '#ff2233';
+                                        $attaching = 'none';
+                                }
+                                while ( my ($key, $value) = each(%$tags) ) {
+                                        unless($key eq 'Name' or $key eq 'Role'){
+                                                $info .= "$key: $value<br />";
+                                        }
+                                }
+                                unless($name eq 'Root' || $name eq '/srv/gbrowse' || $name eq '/srv/gbrowse/s_cerevisiae' || $name eq '/srv/gbrowse/c_elegans'){
+                        $html .=
+                        qq{
+                        <div class="volume_container" id="$snapshot_id" style="background-color:$bgcolor;">
+                                <span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name
+                                <span id="attach_info_$snapshot_id" class="attach_info" style="display:$attaching">Attaching...</span>
+                                </span>
 			<br />
 				<div class="info" id="info_$snapshot_id">$info</div>
 			</div>}; 
@@ -309,23 +333,30 @@ sub display_information
 				my $status = '';
 				my $attachment = $volume->attachment if $volume;
 				my $status = $attachment->current_status if $volume;
-				# Set the background color based on the status of the volume;
-				if ($status eq 'attached' || $status eq 'busy'){
-                       	         	$bgcolor = '#E2EBFE';
-                	        } elsif ($status eq 'attaching'){
-        	                        $bgcolor = '#eeee33';
-	                        } elsif ($status eq 'detaching'){
-					$bgcolor = '#ff2233';
-				}
-				while ( my ($key, $value) = each(%$tags) ) {
-					unless($key eq 'Name' or $key eq 'Role'){
-						$info .= "$key: $value<br />";
-					}
-			 	}
-				$html .= 
-			qq{
-			<div class="volume_container" id="$snapshot_id" style="background-color:$bgcolor;">
-				<span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name</span>
+                                my $attaching;
+                                # Set the background color based on the status of the volume;
+                                if ($status eq 'attached' || $status eq 'busy'){
+                                        $bgcolor = '#E2EBFE';
+                                        $attaching = 'none';
+                                } elsif ($status eq 'attaching'){
+                                        $bgcolor = '#eeee33';
+                                        $attaching = 'visible';
+                                } elsif ($status eq 'detaching'){
+                                        $bgcolor = '#ff2233';
+                                        $attaching = 'none';
+                                }
+                                while ( my ($key, $value) = each(%$tags) ) {
+                                        unless($key eq 'Name' or $key eq 'Role'){
+                                                $info .= "$key: $value<br />";
+                                        }
+                                }
+                                unless($name eq 'Root' || $name eq '/srv/gbrowse' || $name eq '/srv/gbrowse/s_cerevisiae' || $name eq '/srv/gbrowse/c_elegans'){
+                        $html .=
+                        qq{
+                        <div class="volume_container" id="$snapshot_id" style="background-color:$bgcolor;">
+                                <span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name
+                                <span id="attach_info_$snapshot_id" class="attach_info" style="display:$attaching">Attaching...</span>
+                                </span>
 			<br />
 				<div class="info" id="info_$snapshot_id">$info</div>
 			</div>}; 
