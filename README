@@ -1,40 +1,52 @@
-GBrowse Amazon EC2 Image -- Early documentation
+GBrowse Cloud Documentation
 
-The development version of GBrowse is located on the private AMI
-ami-2e48b347, named "GBrowse 2.40 Master".
+***The GBrowse Cloud Image***
+The GBrowse image with an administration site
+is located on the private AMI ami-2e48b347, named 
+"GBrowse Cloud Master".
 
 To launch it:
 
   1. Find the image in the AWS Console.
   2. Right click and select "Launch Instance"
      - Launch 1 instance.
-     - Select either the "micro" or "small" instance size.
+     - Select a "small" instance size.
      - Select termination protection (good idea)
      - Select your public/private keypair
      - Select the WebServer security group (ports 80 and 22 open)
   3. Wait for the instance to boot up, as indicated by "running" state
      in the console instance browser.
 
-To access the web server:
+To access the administration page or web server
 
   1. Identify the public DNS name for the running instance, as indicated
        in the console.
   2. Point your web browse to this DNS name, using:
-       http://XXXX.amazonaws.com/gb2/gbrowse/elegans/
+       http://XXXX.amazonaws.com/gb2/admin/
       or
-       http://XXXX.amazonaws.com/gb2/gbrowse/yeast
+       http://XXXX.amazonaws.com/gbrowse2
 
-To log in:
+To use the administration page
+  
+  1. On the page http://XXXX.amazonaws.com/gb2/admin/ enter your access key,
+	secret access key, and a password for future use, and keep track of
+	the password for future use
+  2. If your information is valid, you will see the administration page
+	allowing you to attach snapshots to your master machine and it's
+	slaves or to create/remove slave machines
+
+To SSH into your machine:
 
    1. Identify the public DNS name for the running instance
    2. ssh to the instance using your keypair file and the
        user name "gbrowse":
 
         ssh -i keypair_file.pem gbrowse@XXXX.amazonaws.com
+
    3. This should give you a command shell on the remote
         machine.
 
-To launch slave processes:
+To launch slave processes without the administration site:
 
    1. While logged in to the running instance, create a .eucarc
         file in your home directory. It should contain the
@@ -51,6 +63,76 @@ To launch slave processes:
       This will launch the indicated number of GBrowse slave
       instances and attach them to the running GBrowse process.
 
+
+HOW THE WEBPAGE WORKS
+
+Adding and removing slave machines
+----------------------------------
+To add or remove slaves:
+  1. Slide the bar or use the dropdown to select the new number
+	of slave machines
+  2. Click update.
+  3. A yellow bar representing each new slave will be created
+  4. Once the slave is running, the bar will turn blue and provide
+	information about the slave instance
+  5. Each deleted slave will turn red after a moment and will 
+	disappear from the view upon termination
+
+
+Note: The site runs asynchronously, so actions taken will 
+immediately take effect on amazon.
+
+Attaching and detaching snapshots
+---------------------------------
+Available snapshots are the snapshots on amazon that are tagged
+	Role: Species Snapshot.
+
+To add a snapshot to the available snapshots section, tag it 
+with Role: Species Snapshot
+
+To attach a snapshot
+  1. Drag it from unattached snapshots to attached snapshots
+  2. It will turn yellow when attaching and then blue when it 
+	is attached
+  3. If normal slaves are attached to the machine, they will have 
+	the snapshot attached to them as well
+
+'normal slaves' refers to those that were created using
+either the admin page or the gbrowse_attach_script, and not those
+that are created through the amazon console. 
+
+To detach a snapshot
+  1. Drag it from attached snapshots to unattached snapshots
+  2. The volume will be detached from all normal slaves
+
+Note that micro instances have a bug when you try to attach, 
+detach, and then attach a volume again to the same machine, amazon will
+never actually attach the volume and it will stay in the 'attaching' state
+
+
+There are some volumes which are attached to the master machine but 
+are not visible on the administration page. These are the root volume 
+for the machine and the /srv/gbrowse volume, as both of these are not 
+to be removed. 
+
+Hidden volumes from administration page
+---------------------------------------
+Attached volumes that are not visible on the administration page are 
+referenced to directly by their "Name" tag in the file /srv/gbrowse/cgi-bin/gb2/admin. 
+You can change which volumes are shown by adding or removing names in the 
+check in the display_information subroutine.
+
+Password System
+---------------
+The access and secret access keys are stored in a file in
+~/keys on the machine. This file is encrypted through GnuPG 
+using the password that you entered in when first signing into the interface.
+
+If you forget your password for the administration site, you will have to 
+ssh into the machine, go into ~/keys and delete the keys.gpg 
+file saved on there. When you open up the administration page again, you
+will be asked for your access and secret access keys and a new password
+
 HOW THE SYSTEM WORKS
 
 Filesystem Structure
@@ -65,15 +147,18 @@ Species-specific datasets are mounted at /srv/gbrowse/species/XXXXX,
 where XXXXX is the name of the species. Within each species directory,
 you will find the following:
 
-  species.conf -- Contains the data source definition for this species.
-  tracks.conf  -- Contains detailed track configuration for this
+  species.conf    -- Contains the data source definition for this species.
+  tracks.conf     -- Contains detailed track configuration for this
                      data source.
-  dbs/         -- SQLite databases for this data source.
-  Source/      -- Source files used to construct the SQLite databases
-  Source/README-- Description of how to get the source and regenerate
+  dbs/            -- SQLite databases for this data source.
+  Source/         -- Source files used to construct the SQLite databases
+  Source/README   -- Description of how to get the source and regenerate
                      the SQLite databases (this may be incomplete)
-  bin/         -- Scripts possibly used during the collection and
+  bin/         	  -- Scripts possibly used during the collection and
                      processing of source data.
+  renderfarm.conf -- Contains a reference to the machines which will are
+		     registered to that specific species and not to the entire
+		     GBrowse instance
 
 /srv/gbrowse and each of the species mounts all occupy distinct EBS
 volumes and have a corresponding snapshot. The idea is that by
@@ -83,20 +168,21 @@ don't care about).
 
 Here is the current mapping between EBS volumes and snapshots:
 
-   /srv/gbrowse                         snap-c43e21aa
-   /srv/gbrowse/species/s_cerevisiae    snap-c23e21ac
-   /srv/gbrowse/species/c_elegans       snap-c03e21ae  
+   /srv/gbrowse                         snap-24b66844
+   /srv/gbrowse/species/s_cerevisiae    snap-26b66846
+   /srv/gbrowse/species/c_elegans       snap-28b66848  
 
 After mounting or unmounting a species-specific volume, you should
 restart GBrowse using /etc/init.d/apache2 restart.
 
-The gbrowse_attach_slaves.pl Script
------------------------------------
+The gbrowse_attach_slaves.pl and gbrowse_detach_slaves.pl Scripts
+-----------------------------------------------------------------
 
-This script uses the euca2ools command-line tools, which in turn uses
+These scripts use the euca2ools command-line tools, which in turn uses
 Amazon's REST API. The REST API is a lot faster than the SOAP API, so
-I prefer it.
+I prefer it. It is being changed to work with the VM::EC2 perl module
 
+gbrowse_attach_slaves.pl:
  1. Look up which species volumes are mounted on the currently-running
     master machine. This is done by inspecting the filesystem mount
     tables.
@@ -105,7 +191,7 @@ I prefer it.
  3. Look up the AMI image for the current GBrowse Slave AMI. This is
     currently done by inspecting the file
     /srv/gbrowse/etc/ami_map.txt.
- 4. Create a new security group for thae slave instances that allows
+ 4. Create a new security group for the slave instances that allows
     network connections between the currently running master instance
     and the slaves.
  5. Launch the desired number of GBrowse slave instances using the
@@ -116,32 +202,86 @@ I prefer it.
     process is aware of the slaves.
  7. Restart gbrowse.
 
+gbrowse_detach_slaves.pl
+ 1. Selects the requested number of slaves to remove. This is arbitrary
+    as all slave machines should be registered to the master in the same 
+    way
+ 2. Tags the slaves to be deleted so that we know which volumes to delete
+    later on after the detachments have occured
+ 3. Updates the configuration file /srv/gbrowse/etc/renderfarm.conf so
+    that GBrowse no longer looks for these slave machines
+ 4. Restart GBrowse
+
+
+The Registration.pl Script
+--------------------------
+
+This script uses VM::EC2 to register slaves to a master machine, and so
+it requires a .eucarc file with valid access key, secret access key, and
+endpoint. Note that volumes which are to be registered to the master machine
+need to be tagged Storage:<species name in file system>
+
+Registration.pl
+ 1. The script compares all the machines that are registered on amazon
+    with those that are in the Registration.txt file, identifying the ones
+    that are registered but not on amazon anymore
+ 2. Removes the no longer registered machines from all renderfarm.conf
+    files and from Registration.txt
+ 3. Finds all slaves that are to be registered to the master machine
+ 4. For each volume on that slave, it registers it appropriately to the
+    master machine using the "Storage" tag to find the appropriate 
+    conf files
+ 5. Replaces the RegisterTo tag with a RegisteredTo one
+ 6. Adds the new slave machines to the Registration.txt file for future
+    reference
+ 7. Restart gbrowse
+
+ADVANCED USAGE
+
+You may want more control when attaching and detaching slaves, and 
+launch slaves completely from the amazon console. This would allow you
+to attach to the slave machine only the volumes that you want instead
+of all the volumes attached to the master.
+
+Since you are not using the attach_slaves_script, you will have to tag 
+your slaves in order for the master machine to register them. For each
+slave you've made, add the tag: 
+RegisterTo: <master instance id>
+
+You will also have to go to the volumes that you want the GBrowse instance
+to utilize and tag them:
+Storage: <species name in file system>
+for example, Storage:s_cerevisiae. This allows GBrowse to register the slave
+only to those specific drives using the renderfarm.conf files saved there.
+
+A cron job runs on the master machine every minute to find all slave 
+machines to be registered to the master through this tag system. Once found,
+the master will register the slaves only to the volumes currently attached to 
+the slave machine, and these slaves will only ever deal with the volumes
+that you've attached to them through the console. Each slave is registered
+by the organism information its volumes store in:
+
+/srv/gbrowse/species/<organism>/renderfarm.conf
+
+The registration script which the cron job runs is saved in:
+~/registration/registration.pl
+
+All slaves registered in this way are stored in:
+~/registration/registration.txt
+
+Once registered, slaves will be tagged:
+RegisteredTo: <master instance id>
+
 To Do
 -----
 
- 1. The gbrowse_attach_slaves.pl script should record the instanceIds
-    of the launched instances so that they can be shut down when no
-    longer needed.
-
-    Ideally this could be done by attaching a tag to
-    the instance -- something like SlaveOf=i-12345, where i-12345 is
-    the ID of the currently running master intance. The challenge is
-    that euca2ools doesn't currently support the tagging API. I have
-    started work on a Perl interface that supports just enough of the
-    tagging API to get this done.
- 
- 2. There should be a gbrowse_detach_slaves.pl script that will use
-    this recorded slave instance information to terminate one or more
-    of the slaves (or all of them) and deregister them from
-    renderfarm.conf.
-
- 3. Using /srv/gbrowse/etc/ami_map.txt to find the slave AMI is a
+ 1. Using /srv/gbrowse/etc/ami_map.txt to find the slave AMI is a
     bit awkward. It means that every time we update the slave image
     we have to fix ami_map.txt and create a new snapshot of the
     /srv/gbrowse image. It would be better to use the tagging system
     to mark the latest slave.
 
- 4. Web-based interface for mounting and unmounting species data
-     volumes, and controlling the number of atached slaves.
+ 2. Switch gbrowse_attach_slaves.pl to use only VM::EC2 instead of
+    euca2ools
 
 
