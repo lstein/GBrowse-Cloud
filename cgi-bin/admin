@@ -1,9 +1,8 @@
 #!/usr/bin/perl
 use strict;
 use CGI;
-use Digest::SHA qw(hmac_sha256 sha1_hex);
-use GnuPG qw( :algo );
 use VM::EC2;
+use userdata;
 
 # Create the CGI object
 my $query = new CGI;
@@ -14,13 +13,8 @@ print $query->header ( );
 # Display the html header
 head ( );
 
-# Check if this is the first login, if it is, allow them to initialize their information, otherwise ask for password
-my $filename = '/home/gbrowse/keys/keys.gpg';
-if(-e $filename){
-	check_login( );
-} else {
-	new_instance ( );
-}
+#now that the password will be passed in at launch, always check login.
+check_login( );
 
 #Display the html footer
 foot ( );
@@ -40,37 +34,27 @@ sub verify
 {
   # Check to make sure the password is correct, then pass the keys and the endpoint to the admin page
   my $plain_pass = $query->param("password");
-  my $password = sha1_hex($plain_pass);
 
-  my $gpg = new GnuPG();
-  eval{$gpg->decrypt( ciphertext => "/home/gbrowse/keys/keys.gpg", output => "/home/gbrowse/keys/keys.txt", passphrase => $password, symmetric => 1 )};
-  if ($@){
-	error_page();
-  } else { 
-	# The keys are stored in a file which was encrypted by their password
-	open (KEYS, '/home/gbrowse/keys/keys.txt') or die $!;	
-	my $count = 1;
-	my $access_key;
-	my $secret_key;
-	while (<KEYS>)
-	{
-	  if ($count == 1){
-	    $access_key = $_;
-	  } 
-	  elsif ($count == 2) {
-	    $secret_key = $_;
-	  } 
-	  $count++;
-	}
-	close KEYS;
-	chomp $access_key;
-  	`rm /home/gbrowse/keys/keys.txt`;
-  	
-	chomp (my $zone = `curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`);
-  	chop $zone;  # remove trailing 'a','b'...
-  	my $endpoint = "http://ec2.$zone.amazonaws.com";
+  #rather than comparing a sha1 password to one stored in a file, fetch
+  #the password (in plain text!) from the Amazon server via VM::EC2
+  #and then compare
 
-  	admin_page ($access_key, $secret_key, $endpoint);
+#  my $metadata_obj = VM::EC2->instance_metadata;
+#  my $userdata     = $metadata_obj->userData;
+
+#  my %userdata =  map {split /\s*\:\s*/, $_ } split "\n", $userdata;
+
+  my ($access_key, $secret_key) = userdata->aws_keys();
+  my $real_password = userdata->password();
+
+  if ($plain_pass eq $real_password) {  
+  	my $endpoint = userdata->endpoint();
+
+	admin_page ($access_key, $secret_key, $endpoint);
+  #	admin_page ($userdata{'access_key'}, $userdata{'secret_key'}, $endpoint);
+  }
+  else {
+        error_page();
   }
   return;
 }
@@ -90,76 +74,6 @@ sub sign_in
 		</div>};
  	print $html;
 	return;
-}
-
-sub new_instance
-{
-  # Process form if submitted; otherwise display it
-  if ( $query->param("submit") ) {
-    	process_form ( );
-  } else {
-    	display_form ( );
-  }
-  return;
-}
-
-sub display_form
-{
- # During their first sign on, we ask for their keys and a password for future sign-on
-  	my $html = qq{
-		<div id="amazon_key" style="margin:0 auto; width: 430px;">
-			<br />
-			<form name="keys" action="admin" method="post">
-		 	<input type="hidden" name="submit" value="Submit">
-			<label class="form_label">EC2 Access Key: </label><input type="text" name="access_key" /><br />
-			<label class="form_label">EC2 Secret Key: </label><input type="text" name="secret_key" />
-			<br /><br />
-			<label class="form_label">Password: </label><input type="password" name="new_password" />
-			<br /><br />
-			<div id="submit">
-				<input type="submit" name="submit" value="Submit">
-			</div>
-			</form>
-		</div>};
-	print $html;
-	return;
-}
-
-sub process_form
-{
-  # Check the information provided for the keys and password and then set up the instance to run on those keys by encrypting them in a file
-  my $access_key = $query->param("access_key");
-  my $secret_key = $query->param("secret_key");
-  chomp (my $zone = `curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`);
-  chop $zone;  # remove trailing 'a','b'...
-  my $endpoint = "http://ec2.$zone.amazonaws.com";
-
-  # Attempt to connect to amazon with the information, if it doesn't work, display an error page
-  eval{my $ec2 = VM::EC2->new(-access_key => $access_key,
-                      -secret_key => $secret_key,
-                      -endpoint   => $endpoint)};
-
-  if ($@){
-        error_page();
-  } else {
-	my $plain_pass = $query->param("new_password");
-	my $password = sha1_hex($plain_pass);
-
-  	open (KEYS, '>>/home/gbrowse/keys/keys.txt') or die $!;	
-  	print KEYS "$access_key\n";
-	print KEYS "$secret_key";
-	close KEYS;
-
-	my $gpg = new GnuPG();
-	$gpg->encrypt(  plaintext   => "/home/gbrowse/keys/keys.txt",  output  => "/home/gbrowse/keys/keys.gpg", passphrase  => $password, symmetric => 1 );
-
-	# Delete the text form of the file once an encrypted file has been made
-	`rm /home/gbrowse/keys/keys.txt`;
-
-	# Call the administration page with the appropriate keys
-	admin_page ($access_key, $secret_key, $endpoint);
-  	return;
-  }
 }
 
 sub admin_page{
@@ -185,7 +99,7 @@ sub display_information
   # Connect to EC2
   my $ec2 = VM::EC2->new(-access_key => $access_key,
                       -secret_key => $secret_key,
-                      -endpoint   => $endpoint);
+                      -endpoint   => $endpoint) or die "couldn't create VM::EC2 object for admin page";
 
   # Create an array of attached and unattached volumes. Unattached volumes are based off snapshots that do not have corresponding attached volumes
   my @attached_volumes = $ec2->describe_volumes(-filter => {"attachment.instance-id"=>$instance_id}) or die $ec2->error;
@@ -213,8 +127,6 @@ sub display_information
   # Display the admin page
   my $html = qq{
   <div id="main">
-	<span class="invisible" id="access_key">$access_key</span> 
-	<span class="invisible" id="secret_key">$secret_key</span> 
 	<span class="invisible" id="endpoint">$endpoint</span> 
 	<span class="invisible" id="instance_id">$instance_id</span>
 	<div id="slave_container"><br /><br />
@@ -291,30 +203,9 @@ sub display_information
 			qq{
 			<div class="volume_container" id="$snapshot_id">
 				<span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name
-                                my $attaching;
-                                # Set the background color based on the status of the volume;
-                                if ($status eq 'attached' || $status eq 'busy'){
-                                        $bgcolor = '#E2EBFE';
-                                        $attaching = 'none';
-                                } elsif ($status eq 'attaching'){
-                                        $bgcolor = '#eeee33';
-                                        $attaching = 'visible';
-                                } elsif ($status eq 'detaching'){
-                                        $bgcolor = '#ff2233';
-                                        $attaching = 'none';
-                                }
-                                while ( my ($key, $value) = each(%$tags) ) {
-                                        unless($key eq 'Name' or $key eq 'Role'){
-                                                $info .= "$key: $value<br />";
-                                        }
-                                }
-                                unless($name eq 'Root' || $name eq '/srv/gbrowse' || $name eq '/srv/gbrowse/s_cerevisiae' || $name eq '/srv/gbrowse/c_elegans'){
-                        $html .=
-                        qq{
-                        <div class="volume_container" id="$snapshot_id" style="background-color:$bgcolor;">
-                                <span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name
-                                <span id="attach_info_$snapshot_id" class="attach_info" style="display:$attaching">Attaching...</span>
+				<span id="attach_info_$snapshot_id" class="attach_info" style="display:none">Attaching...</span>
                                 </span>
+
 			<br />
 				<div class="info" id="info_$snapshot_id">$info</div>
 			</div>}; 
@@ -333,33 +224,33 @@ sub display_information
 				my $status = '';
 				my $attachment = $volume->attachment if $volume;
 				my $status = $attachment->current_status if $volume;
-                                my $attaching;
-                                # Set the background color based on the status of the volume;
-                                if ($status eq 'attached' || $status eq 'busy'){
-                                        $bgcolor = '#E2EBFE';
-                                        $attaching = 'none';
-                                } elsif ($status eq 'attaching'){
-                                        $bgcolor = '#eeee33';
-                                        $attaching = 'visible';
-                                } elsif ($status eq 'detaching'){
-                                        $bgcolor = '#ff2233';
-                                        $attaching = 'none';
-                                }
-                                while ( my ($key, $value) = each(%$tags) ) {
-                                        unless($key eq 'Name' or $key eq 'Role'){
-                                                $info .= "$key: $value<br />";
-                                        }
-                                }
-                                unless($name eq 'Root' || $name eq '/srv/gbrowse' || $name eq '/srv/gbrowse/s_cerevisiae' || $name eq '/srv/gbrowse/c_elegans'){
-                        $html .=
-                        qq{
-                        <div class="volume_container" id="$snapshot_id" style="background-color:$bgcolor;">
-                                <span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name
-                                <span id="attach_info_$snapshot_id" class="attach_info" style="display:$attaching">Attaching...</span>
-                                </span>
+				my $attaching;
+				# Set the background color based on the status of the volume;
+				if ($status eq 'attached' || $status eq 'busy'){
+                       	         	$bgcolor = '#E2EBFE';
+					$attaching = 'none';
+                	        } elsif ($status eq 'attaching'){
+        	                        $bgcolor = '#eeee33';
+					$attaching = 'visible';
+	                        } elsif ($status eq 'detaching'){
+					$bgcolor = '#ff2233';
+					$attaching = 'none';
+				}
+				while ( my ($key, $value) = each(%$tags) ) {
+					unless($key eq 'Name' or $key eq 'Role'){
+						$info .= "$key: $value<br />";
+					}
+			 	}
+				unless($name eq 'Root' || $name eq '/srv/gbrowse' || $name eq '/srv/gbrowse/s_cerevisiae' || $name eq '/srv/gbrowse/c_elegans'){
+			$html .= 
+			qq{
+			<div class="volume_container" id="$snapshot_id" style="background-color:$bgcolor;">
+				<span value="$snapshot_id" onclick="selected('$snapshot_id')"/>$name
+				<span id="attach_info_$snapshot_id" class="attach_info" style="display:$attaching">Attaching...</span>
+				</span>
 			<br />
 				<div class="info" id="info_$snapshot_id">$info</div>
-			</div>}; 
+			</div>};}
 			}
 
 		$html .= qq{</div></div></div></div>};

@@ -5,6 +5,7 @@ use VM::EC2;
 use JSON;
 use URI::Escape;
 
+use userdata;
 # Create the CGI object
 my $cgi = new CGI;
 
@@ -12,10 +13,11 @@ my $cgi = new CGI;
 print $cgi->header ( );
 
 my $snapshot_id = $cgi->param("snapshot");
-my $access_key = $cgi->param("access_key");
-my $secret_key = uri_unescape($cgi->param("secret_key"));
 my $endpoint = $cgi->param("endpoint");
 chomp (my $instance_id = `curl -s http://169.254.169.254/latest/meta-data/instance-id`); 
+
+my ($access_key, $secret_key) = userdata->aws_keys();
+
 
 # Connect to EC2
 my $ec2 = VM::EC2->new(-access_key => $access_key,

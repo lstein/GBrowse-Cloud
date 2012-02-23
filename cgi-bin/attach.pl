@@ -5,6 +5,7 @@ use VM::EC2;
 use JSON;
 use URI::Escape;
 
+use userdata;
 # Create the CGI object
 my $cgi = new CGI;
 
@@ -14,10 +15,10 @@ print $cgi->header ( );
 #initialize all the parameters
 my $selected = $cgi->param("selected");
 my $type = $cgi->param("type");
-my $access_key = $cgi->param("access_key");
-my $secret_key = uri_unescape($cgi->param("secret_key"));
 my $endpoint = $cgi->param("endpoint");
 my $instance_id = $cgi->param("instance_id");
+
+my ($access_key, $secret_key) = userdata->aws_keys();
 
 if ($type eq 'unattached'){
 	attach($selected, $access_key, $secret_key, $endpoint, $instance_id);
