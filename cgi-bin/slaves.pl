@@ -3,8 +3,9 @@ use strict;
 use CGI;
 use VM::EC2;
 use URI::Escape;
+use Bio::Graphics::Browser2::Cloud::Userdata;
 
-use userdata;
+
 
 # Create the CGI object
 my $cgi = new CGI;

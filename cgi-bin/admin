@@ -2,7 +2,7 @@
 use strict;
 use CGI;
 use VM::EC2;
-use userdata;
+use Bio::Graphics::Browser2::Cloud::Userdata;
 
 # Create the CGI object
 my $query = new CGI;
