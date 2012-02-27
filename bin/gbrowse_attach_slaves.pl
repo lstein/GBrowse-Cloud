@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 use strict;
 use VM::EC2;
+use Bio::Graphics::Browser2::Cloud::Userdata;
 
 use Term::ReadLine;
 
@@ -33,9 +34,9 @@ my $TERM;
 
 # Pass in the keys and url from the administration page or else check eucarc 
 my $SLAVE_COUNT = shift || 1;
-my $ACCESS_KEY = shift;
-my $SECRET_KEY = shift;
-my $URL = shift;
+my $ACCESS_KEY  = shift;
+my $SECRET_KEY  = shift;
+my $URL         = shift;
 my $website;
 
 if(defined($ACCESS_KEY) && defined($SECRET_KEY) && defined($URL)){
@@ -49,8 +50,9 @@ if(defined($ACCESS_KEY) && defined($SECRET_KEY) && defined($URL)){
 }
 
 # Creating the ec2 object for easier configuration using amazon tools
-my $ec2 = VM::EC2->new(-access_key => $ENV{EC2_ACCESS_KEY}, -secret_key => $ENV{EC2_SECRET_KEY}, 
-			-endpoint => $ENV{EC2_URL});
+my $ec2 = VM::EC2->new(-access_key => $ENV{EC2_ACCESS_KEY}, 
+                       -secret_key => $ENV{EC2_SECRET_KEY}, 
+		       -endpoint => $ENV{EC2_URL});
 
 my @mounts       = get_species_mounts();
 my $snapshot_map = get_snapshot_map(\@mounts);
@@ -72,10 +74,16 @@ my $security = get_security_group();
 
 # Now get the IP addresses of these instances using VM::EC2
 my $image = $ec2->describe_images($ami);
-chomp (my $master = `curl -s http://169.254.169.254/latest/meta-data/instance-id`);
-chomp(my $placement = `curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`);
+chomp (my $master    =`curl -s http://169.254.169.254/latest/meta-data/instance-id`);
+chomp (my $placement =`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`);
 
-my @instances = $image->run_instances(-key_name => $key, -instance_type => 't1.micro', -min_count => $SLAVE_COUNT, -zone => "$placement", -security_group=>$security, @block_args ) or die $ec2->error;
+my @instances = $image->run_instances(-key_name       => $key, 
+                                      -instance_type  => 't1.micro', 
+                                      -min_count      => $SLAVE_COUNT, 
+                                      -zone           => "$placement", 
+                                      -security_group => $security,
+                                      -userdata       => "masterid:$master",
+                                      @block_args ) or die $ec2->error;
 
 # insert code to tag all slaves to the master instance_id and mark them as registered -aelnaiem
 foreach(@instances){
@@ -232,42 +240,7 @@ END
 }
 
 sub check_eucarc {
-    if (-r "$ENV{HOME}/.eucarc") {
-	open my $f,"$ENV{HOME}/.eucarc" or die "~/.eucarc: $!";
-	while (<$f>) {
-	    chomp;
-	    my ($key,$value) = /^(EC2\w+)\s*=\s*(.+)/ or next;
-	    $ENV{$key}=$value;
-	}
-    }
-
-    $ENV{EC2_URL}        ||= get_ec2_url();
-    $ENV{EC2_ACCESS_KEY} ||= get_access_key();
-    $ENV{EC2_SECRET_KEY} ||= get_secret_key();
+    $ENV{EC2_URL} = userdata->endpoint();
+    ($ENV{EC2_ACCESS_KEY}, $ENV{EC2_SECRET_KEY}) = userdata->aws_keys();
 }
 
-sub get_ec2_url {
-    chomp (my $zone = `curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`);
-    #chop $zone;  # remove trailing 'a','b'...
-    return "http://ec2.$zone.amazonaws.com";
-}
-
-sub get_access_key {
-    print STDERR "\n";
-    print STDERR "I need your EC2 access key id. You can find this under \"Security Credentials\" on your Amazon account page.\n";
-    print STDERR "To avoid this prompt in the future, create a ~/.eucarc file containing the line EC2_ACCESS_KEY=<access key>\n";
-    return prompt ('EC2_ACCESS_KEY:');
-}
-
-sub get_secret_key {
-    print STDERR "\n";
-    print STDERR "I need your EC2 secret key. You can find this under \"Security Credentials\" on your Amazon account page.\n";
-    print STDERR "To avoid this prompt in the future, create a ~/.eucarc file containing the line EC2_SECRET_KEY=<access key>\n";
-    return prompt ('EC2_SECRET_KEY:');
-}
-
-sub prompt {
-    my $prompt = shift;
-    $TERM ||= Term::ReadLine->new('gbrowse_attach_slaves.pl');
-    return $TERM->readline($prompt);
-}
