@@ -29,8 +29,6 @@ warn $instance_id;
 
 my $instance = $ec2->describe_instances($instance_id);
 
-warn "instance: $instance";
-
 my $status = $instance->current_status;
 my $private_ip = $instance->privateIpAddress;
 my $private_dns = $instance->privateDnsName;
